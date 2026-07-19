@@ -270,6 +270,17 @@ a:focus-visible, button:focus-visible{
   padding: 96px 24px;
 }
 
+/* İmza mikro-detay: metinden önce çizilen bir kılcal çizgi. Sürecin
+   "tamamlandığını" temsil eder — filtrasyonun kendisi gibi ince ve kesin. */
+.res-mark{
+  width: 0;
+  height: 1px;
+  background: var(--ink-35);
+  margin: 0 auto 28px;
+  transition: width 1s var(--ease);
+}
+#resolution.is-visible .res-mark{ width: 40px; }
+
 .res-eyebrow{
   font-size: 13px;
   font-weight: 600;
@@ -277,7 +288,7 @@ a:focus-visible, button:focus-visible{
   color: var(--ink-60);
   opacity: 0;
   transform: translateY(16px);
-  transition: opacity 1s var(--ease), transform 1s var(--ease);
+  transition: opacity 1s var(--ease) 0.06s, transform 1s var(--ease) 0.06s;
   margin-bottom: 28px;
 }
 
@@ -290,7 +301,7 @@ a:focus-visible, button:focus-visible{
   max-width: 17ch;
   opacity: 0;
   transform: translateY(22px);
-  transition: opacity 1.1s var(--ease) 0.08s, transform 1.1s var(--ease) 0.08s;
+  transition: opacity 1.1s var(--ease) 0.14s, transform 1.1s var(--ease) 0.14s;
 }
 
 .res-sub{
@@ -302,7 +313,7 @@ a:focus-visible, button:focus-visible{
   max-width: 40ch;
   opacity: 0;
   transform: translateY(22px);
-  transition: opacity 1.1s var(--ease) 0.16s, transform 1.1s var(--ease) 0.16s;
+  transition: opacity 1.1s var(--ease) 0.22s, transform 1.1s var(--ease) 0.22s;
 }
 
 .res-stats{
@@ -313,7 +324,7 @@ a:focus-visible, button:focus-visible{
   margin-top: 56px;
   opacity: 0;
   transform: translateY(22px);
-  transition: opacity 1.1s var(--ease) 0.26s, transform 1.1s var(--ease) 0.26s;
+  transition: opacity 1.1s var(--ease) 0.30s, transform 1.1s var(--ease) 0.30s;
 }
 .res-stat{
   display: flex;
@@ -349,7 +360,7 @@ a:focus-visible, button:focus-visible{
   margin-top: 48px;
   opacity: 0;
   transform: translateY(22px);
-  transition: opacity 1.1s var(--ease) 0.34s, transform 1.1s var(--ease) 0.34s;
+  transition: opacity 1.1s var(--ease) 0.38s, transform 1.1s var(--ease) 0.38s;
 }
 
 #resolution.is-visible .res-eyebrow,
@@ -365,19 +376,29 @@ a:focus-visible, button:focus-visible{
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 8px;
   min-width: 216px;
   padding: 17px 34px;
   border-radius: 980px;
   font-size: 15px;
   font-weight: 600;
   letter-spacing: -0.005em;
-  transition: transform 0.5s var(--ease), background 0.5s var(--ease), border-color 0.5s var(--ease), color 0.5s var(--ease);
+  transition: transform 0.5s var(--ease), background 0.5s var(--ease), border-color 0.5s var(--ease), color 0.5s var(--ease), box-shadow 0.5s var(--ease);
 }
+/* Mikro etkileşim: CTA'nın oku, hover'da yönünü işaret ettiği tarafa doğru
+   kısa bir mesafe kayar — "ileri git" hissini pekiştiren küçük bir detay. */
+.btn-arrow{ transition: transform 0.45s var(--ease); flex-shrink: 0; }
+.btn:hover .btn-arrow{ transform: translate(2px, -2px); }
+
 .btn-fill{
   background: var(--white);
   color: var(--black);
 }
-.btn-fill:hover{ transform: translateY(-2px); background: #E4E4E4; }
+.btn-fill:hover{
+  transform: translateY(-2px);
+  background: #E4E4E4;
+  box-shadow: 0 10px 30px rgba(255,255,255,0.12);
+}
 .btn-line{
   background: transparent;
   color: var(--white);
@@ -487,6 +508,7 @@ a:focus-visible, button:focus-visible{
 </main>
 
 <section id="resolution">
+  <div class="res-mark"></div>
   <div class="res-eyebrow">SOFTHYDRA</div>
   <h2 class="res-line">Temiz su bir lüks değildir.</h2>
   <p class="res-sub">
@@ -508,8 +530,18 @@ a:focus-visible, button:focus-visible{
     </div>
   </div>
   <div class="res-actions">
-    <a class="btn btn-fill" href="https://softhydra.com/su-aritma-cihazlari">Ürünleri Keşfet</a>
-    <a class="btn btn-line" href="https://softhydra.com/filtre-setleri">Filtreleri İncele</a>
+    <a class="btn btn-fill" href="https://softhydra.com/su-aritma-cihazlari">
+      <span>Ürünleri Keşfet</span>
+      <svg class="btn-arrow" width="13" height="13" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <path d="M3 11L11 3M11 3H4M11 3V10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </a>
+    <a class="btn btn-line" href="https://softhydra.com/filtre-setleri">
+      <span>Filtreleri İncele</span>
+      <svg class="btn-arrow" width="13" height="13" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <path d="M3 11L11 3M11 3H4M11 3V10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </a>
   </div>
 </section>
 
@@ -553,10 +585,11 @@ a:focus-visible, button:focus-visible{
     frameCount: 152,
     framePathPrefix: "frames/ezgif-frame-",
     framePathSuffix: ".jpg",
-    // Sticky alanın kaç viewport yüksekliği boyunca süreceği. 7.5 → 13:
-    // ortalama bir scroll hızında bu, ~13-16 saniyelik bir izleme deneyimine
-    // karşılık gelir (brief'in hedeflediği "~15 saniye"ye denk düşer).
-    scrollMultiplier: 13
+    // Sticky alanın kaç viewport yüksekliği boyunca süreceği. Orijinal
+    // sürümün (7.5) yaklaşık 2 katı: 152 karenin aynı kaynağı çok daha geniş
+    // bir scroll mesafesine yayılıyor, dolayısıyla her kare arası daha uzun
+    // süre ekranda kalıyor — "acele eden video" hissi tamamen ortadan kalkar.
+    scrollMultiplier: 15
   };
 
   var reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -681,6 +714,37 @@ a:focus-visible, button:focus-visible{
     drawCover(img, zoom);
   }
 
+  // Kare enterpolasyonu: iki komşu kare arasında ondalıklı bir konumdaysak
+  // (örn. 42.6), 42. kareyi tam opaklıkta, 43. kareyi 0.6 alfa ile üstüne
+  // çizeriz. Bu, "lineer sert kare değişimi" yerine gerçek bir crossfade
+  // üretir — özellikle uzatılmış scroll mesafesinde (aynı kare artık daha
+  // uzun süre ekranda kaldığından) geçişleri fark edilmez şekilde akıcı
+  // tutan asıl mekanizma budur. İki drawImage çağrısı hâlâ ucuzdur, 60 FPS
+  // hedefini etkilemez.
+  function drawFrameInterpolated(floatIndex, zoom) {
+    var clampedIndex = clamp(floatIndex, 1, CONFIG.frameCount);
+    var lower = Math.floor(clampedIndex);
+    var upper = Math.min(lower + 1, CONFIG.frameCount);
+    var frac = clampedIndex - lower;
+
+    var imgLower = frameImages[lower];
+    if (!imgLower || !imgLower.complete || imgLower.naturalWidth === 0) return;
+
+    ctx.fillStyle = "#000000";
+    ctx.fillRect(0, 0, canvasCssWidth, canvasCssHeight);
+    ctx.globalAlpha = 1;
+    drawCover(imgLower, zoom);
+
+    if (frac > 0.004 && upper !== lower) {
+      var imgUpper = frameImages[upper];
+      if (imgUpper && imgUpper.complete && imgUpper.naturalWidth > 0) {
+        ctx.globalAlpha = frac;
+        drawCover(imgUpper, zoom);
+        ctx.globalAlpha = 1;
+      }
+    }
+  }
+
   /* ============================================================================
      3) SCROLL UZUNLUĞU — cache'lenmiş, forced reflow üretmeyen ofset
      ============================================================================ */
@@ -698,9 +762,11 @@ a:focus-visible, button:focus-visible{
   }
 
   /* ============================================================================
-     4) ANLATI SAHNELERİ — blur + opacity + translateY + scale, ham scroll
-        ilerlemesine (p) göre senkronize edilir. Kare oynatma hızından
-        bağımsızdır, böylece okuma temposu her zaman öngörülebilir kalır.
+     4) ANLATI SAHNELERİ — blur + opacity + translateY + scale, kare zaman
+        çizelgesiyle AYNI eksende (eased progress) senkronize edilir. Bu
+        fonksiyona iletilen değer artık ham scroll değil, loop() içinde
+        hesaplanan easedP'dir — böylece bir metin her zaman videodaki aynı
+        "ana" ile eşleşir, scroll hızından bağımsız olarak.
      ============================================================================ */
   var scenes = sceneEls.map(function (el) {
     return {
@@ -804,20 +870,23 @@ a:focus-visible, button:focus-visible{
   function loop(timestamp) {
     var p = computeProgress();
 
-    // Kare seçimi HAM p yerine smootherstep'ten geçirilmiş p kullanır:
-    // başta ve sonda görüntü yavaş akar, ortada doğal/hızlı akar. Metin
-    // sahneleri ise (renderScenes içinde) ham p'yi kullanmaya devam eder —
-    // iki eksen kasıtlı olarak ayrıştırılmıştır.
+    // Kare konumu HAM p yerine smootherstep'ten geçirilmiş p kullanır: başta
+    // ve sonda görüntü yavaş akar, ortada doğal/hızlı akar. Metin sahneleri
+    // de AYNI easedP değerini kullanır (renderScenes çağrısına bakın) —
+    // böylece anlatı, kare zaman çizelgesiyle birebir senkronize olur: video
+    // yavaşladığında metin de yavaşlar, hızlandığında birlikte hızlanır.
+    // Yalnızca ilerleme çizgisi ve perde kapanışı ham p'yi kullanmaya devam
+    // eder, çünkü onlar "fiziksel scroll konumu"nu göstermelidir.
     var easedP = reducedMotion ? p : smootherstep(p);
-    var frameIndex = clamp(Math.ceil(easedP * CONFIG.frameCount), 1, CONFIG.frameCount);
+    var floatFrameIndex = 1 + easedP * (CONFIG.frameCount - 1);
 
     // Zamana bağlı çok hafif "nefes alma" — kameranın canlı olduğu hissi.
     var breathing = reducedMotion ? 0 : Math.sin(timestamp / 2600) * 0.006;
-    var pushIn = easedP * 0.05; // yolculuk boyunca çok yavaş, kalıcı yaklaşma
+    var pushIn = easedP * 0.045; // yolculuk boyunca çok yavaş, kalıcı yaklaşma
     var zoom = 1.0 + pushIn + breathing;
 
-    drawFrame(frameIndex, zoom);
-    var sceneActivity = renderScenes(p);
+    drawFrameInterpolated(floatFrameIndex, zoom);
+    var sceneActivity = renderScenes(easedP);
     renderCamera(p, sceneActivity, timestamp);
 
     window.requestAnimationFrame(loop);
@@ -902,9 +971,16 @@ a:focus-visible, button:focus-visible{
        gereken standart bir örüntüdür, ekstra vendor prefix gerektirmez.
      - Erişilebilirlik: prefers-reduced-motion tüm blur/scale/translate ve
        "nefes alma" zoom'unu devre dışı bırakıyor; odak halkaları korunuyor.
-     - Tempo: scrollMultiplier 13 + smootherstep easing + sahne başına sabit
-       tavanlı fade payı = brief'in istediği "yavaş başlangıç / doğal orta /
+     - Tempo: scrollMultiplier 15 (orijinalin ~2 katı) + smootherstep easing +
+       sahne başına sabit tavanlı fade payı = "yavaş başlangıç / doğal orta /
        yavaş final" ve "kimse okumadan kaybolmasın" hedefleri karşılanıyor.
+     - Akıcılık: drawFrameInterpolated iki komşu kareyi globalAlpha ile
+       crossfade eder — kare değişimleri artık sert kesme değil, gerçek bir
+       geçiş. Metin sahneleri de aynı easedP eksenini kullandığından anlatı
+       ile görüntü birebir senkron ilerliyor.
+     - CTA: hairline imza + kademeli reveal + buton üzerinde kayan ok ikonu
+       ile mikro etkileşim eklendi; hiçbiri layout'u etkilemiyor (yalnızca
+       transform/opacity/box-shadow, reflow tetiklemiyor).
      ============================================================================ */
 
 })();
