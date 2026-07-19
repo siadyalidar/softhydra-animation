@@ -1,0 +1,913 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>SoftHydra — Sediment Filtre</title>
+<meta name="description" content="Şebeke suyundaki görünmeyen gerçek. SoftHydra sediment filtre teknolojisi.">
+
+<style>
+/* ============================================================================
+   SOFTHYDRA — SEDİMENT FİLTRE / SİNEMATİK SCROLL DENEYİMİ
+   Tek dosya, framework'süz, vanilla HTML / CSS / JS.
+
+   Tasarım yönü: mühendislik ürünü hissi. Apple ürün sayfaları, Dyson,
+   Nothing, Tesla, Linear ve Arc referans alınmıştır. Kart yok, cam yüzey
+   yok, renkli vurgu yok — yalnızca siyah, beyaz, ışık ve zaman. Tüm dikkat
+   kare (frame) üzerinde; tipografi ona hizmet eder, onunla yarışmaz.
+
+   REVİZYON NOTU (production refactor):
+   Bu sürüm önceki versiyonun mimarisini korur (rAF döngüsü, cache'lenmiş
+   scroll ofseti, HiDPI canvas) ancak zamanlamayı, easing mantığını ve
+   metni baştan sona yeniden kurar. Amaç: kullanıcının kaydırırken bir
+   reklam filmi izlediğini hissetmesi — acele etmeyen, nefes alan, kontrollü
+   bir tempo. Detaylar için aşağıdaki bölüm başlıklarına bakın.
+   ============================================================================ */
+
+:root{
+  --black: #000000;
+  --white: #FFFFFF;
+  --ink-60: rgba(255,255,255,0.60);
+  --ink-35: rgba(255,255,255,0.35);
+  --ink-14: rgba(255,255,255,0.14);
+
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+
+  /* Sinematik easing — CSS geçişlerinde kullanılan "yavaşla / hızlan / yavaşla"
+     eğrisi. Frame oynatma mantığı bunun JS karşılığını (smootherstep) kullanır,
+     çünkü scrollY'ye bağlı bir değeri CSS transition ile yumuşatamayız —
+     scroll anlık bir konum bildirir, süre bilgisi taşımaz. */
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+*, *::before, *::after{ box-sizing: border-box; margin: 0; padding: 0; }
+
+html{ background: var(--black); }
+
+body{
+  background: var(--black);
+  color: var(--white);
+  font-family: var(--font);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow-x: hidden;
+}
+
+body.is-loading{ overflow: hidden; height: 100vh; }
+
+img{ display: block; max-width: 100%; }
+a{ color: inherit; text-decoration: none; }
+button{ font-family: inherit; }
+::selection{ background: rgba(255,255,255,0.2); color: #fff; }
+
+a:focus-visible, button:focus-visible{
+  outline: 1px solid var(--white);
+  outline-offset: 4px;
+}
+
+/* ============================================================================
+   YÜKLEME EKRANI — sessiz, monokrom, sinematik
+   ============================================================================ */
+#loader{
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: var(--black);
+  transition: opacity 1.1s var(--ease);
+}
+#loader.is-hidden{ opacity: 0; pointer-events: none; }
+.loader-mark{
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.24em;
+  color: var(--ink-60);
+  margin-bottom: 32px;
+}
+.loader-track{ width: 88px; height: 1px; background: var(--ink-14); overflow: hidden; }
+.loader-fill{ height: 100%; width: 0%; background: var(--white); transition: width 0.3s ease-out; }
+.loader-error{
+  max-width: 380px;
+  text-align: center;
+  margin-top: 28px;
+  padding: 0 24px;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--ink-35);
+  display: none;
+}
+.loader-error.is-visible{ display: block; }
+.loader-error code{ color: var(--ink-60); }
+
+/* ============================================================================
+   İNCE İLERLEME ÇİZGİSİ — tek kronometre, hiçbir etiket yok.
+   mix-blend-mode: difference sayesinde her karede otomatik kontrast sağlar.
+   ============================================================================ */
+#progress-line{
+  position: fixed;
+  top: 0; left: 0;
+  height: 1px;
+  width: 0%;
+  background: var(--white);
+  mix-blend-mode: difference;
+  z-index: 60;
+}
+
+/* ============================================================================
+   SCROLL PARÇASI + SABİTLENMİŞ SAHNE
+   ============================================================================ */
+#scroll-track{ position: relative; width: 100%; }
+
+#pin{
+  position: sticky;
+  top: 0; left: 0;
+  width: 100%;
+  height: 100vh;
+  height: 100svh;
+  overflow: hidden;
+  background: var(--black);
+}
+
+#frame-canvas{
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  will-change: filter;
+}
+
+/* Atmosferik karartma — kart değil, tüm ekranı kaplayan sinematik bir ışık
+   eğrisi. Opacity JS tarafından, aktif metin miktarına göre canlı hesaplanır.
+   Bilinçli olarak hiçbir zaman tam siyaha gitmez: video her zaman "ana
+   karakter" olarak görünür kalır, yazı onun üstüne bir spot ışığı gibi düşer. */
+#vignette{
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  background:
+    radial-gradient(ellipse 72% 62% at 50% 50%, transparent 0%, rgba(0,0,0,0.58) 100%),
+    linear-gradient(to bottom, rgba(0,0,0,0.50) 0%, transparent 24%, transparent 74%, rgba(0,0,0,0.55) 100%);
+  transition: opacity 0.6s var(--ease);
+  will-change: opacity;
+}
+
+/* Film grenli doku — tamamen inline SVG gürültü, harici asset yok. */
+#grain{
+  position: absolute;
+  inset: -60px;
+  pointer-events: none;
+  opacity: 0.05;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 180px 180px;
+  animation: grain-drift 1.2s steps(4) infinite;
+}
+@keyframes grain-drift{
+  0%   { transform: translate(0, 0); }
+  25%  { transform: translate(-2%, 3%); }
+  50%  { transform: translate(3%, -2%); }
+  75%  { transform: translate(-3%, -3%); }
+  100% { transform: translate(0, 0); }
+}
+
+/* Siyah perde — açılışta içeri, kapanışta dışarı sinematik geçiş.
+   Kapanışta bile %97 opaklıkta durur (bkz. JS `closeCurtain`): kare hiçbir
+   zaman tamamen kaybolmaz, yalnızca bir sonraki bölüme yumuşakça devreder. */
+#curtain{
+  position: absolute;
+  inset: 0;
+  background: var(--black);
+  opacity: 1;
+  pointer-events: none;
+  will-change: opacity;
+}
+
+/* ============================================================================
+   ANLATI — büyük, sessiz, nefes alan tipografi.
+   Sahneler merkezde veya sol tarafta konumlanabilir (bkz. .scene--left);
+   video hiçbir zaman tam olarak kapatılmaz, metin onun üstünde asılı durur.
+   ============================================================================ */
+#narrative-layer{
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  padding: 0 7vw;
+}
+
+.scene{
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  max-width: 20ch;
+  opacity: 0;
+  text-align: center;
+  will-change: opacity, filter, transform;
+}
+
+.scene--left{
+  left: 7vw;
+  text-align: left;
+}
+
+.scene .line{
+  display: block;
+  font-weight: 600;
+  font-size: clamp(38px, 7.4vw, 132px);
+  line-height: 1.04;
+  letter-spacing: -0.03em;
+  color: var(--white);
+}
+
+/* İkinci seviye satır — bir ana kelimenin altına gelen daha küçük, daha
+   sakin destek cümlesi. Apple'ın "büyük kelime + küçük açıklama" hiyerarşisi. */
+.scene .line--sub{
+  font-weight: 500;
+  font-size: clamp(20px, 2.6vw, 34px);
+  color: var(--ink-60);
+  letter-spacing: -0.01em;
+  margin-top: 14px;
+}
+
+/* ============================================================================
+   AŞAĞI KAYDIRMA İPUCU — yalnızca ok, hiç metin yok
+   ============================================================================ */
+#scroll-cue{
+  position: absolute;
+  left: 50%;
+  bottom: 40px;
+  transform: translateX(-50%);
+  opacity: 0.8;
+  mix-blend-mode: difference;
+  transition: opacity 0.6s var(--ease);
+  pointer-events: none;
+}
+#scroll-cue.is-hidden{ opacity: 0; }
+#scroll-cue svg{ animation: cue-bob 2.4s ease-in-out infinite; }
+@keyframes cue-bob{
+  0%, 100% { transform: translateY(0); opacity: 0.4; }
+  50% { transform: translateY(7px); opacity: 1; }
+}
+
+/* ============================================================================
+   ÇÖZÜM — sessizce beliren, gerçek bir landing page hissi veren kapanış.
+   Kart yok, gölge yok; yalnızca hizalama, tipografi ve boşluk ile hiyerarşi.
+   ============================================================================ */
+#resolution{
+  position: relative;
+  min-height: 100vh;
+  min-height: 100svh;
+  background: var(--black);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 96px 24px;
+}
+
+.res-eyebrow{
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.26em;
+  color: var(--ink-60);
+  opacity: 0;
+  transform: translateY(16px);
+  transition: opacity 1s var(--ease), transform 1s var(--ease);
+  margin-bottom: 28px;
+}
+
+.res-line{
+  font-weight: 600;
+  font-size: clamp(30px, 4.6vw, 52px);
+  line-height: 1.15;
+  letter-spacing: -0.025em;
+  color: var(--white);
+  max-width: 17ch;
+  opacity: 0;
+  transform: translateY(22px);
+  transition: opacity 1.1s var(--ease) 0.08s, transform 1.1s var(--ease) 0.08s;
+}
+
+.res-sub{
+  margin-top: 22px;
+  font-weight: 400;
+  font-size: clamp(15px, 1.6vw, 19px);
+  line-height: 1.6;
+  color: var(--ink-60);
+  max-width: 40ch;
+  opacity: 0;
+  transform: translateY(22px);
+  transition: opacity 1.1s var(--ease) 0.16s, transform 1.1s var(--ease) 0.16s;
+}
+
+.res-stats{
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  gap: 0;
+  margin-top: 56px;
+  opacity: 0;
+  transform: translateY(22px);
+  transition: opacity 1.1s var(--ease) 0.26s, transform 1.1s var(--ease) 0.26s;
+}
+.res-stat{
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 0 32px;
+  border-left: 1px solid var(--ink-14);
+}
+.res-stat:first-child{ border-left: none; padding-left: 0; }
+.res-stat:last-child{ padding-right: 0; }
+.res-stat-num{
+  font-size: clamp(17px, 1.9vw, 22px);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--white);
+  white-space: nowrap;
+}
+.res-stat-label{
+  font-size: 12.5px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  color: var(--ink-35);
+  white-space: nowrap;
+}
+
+.res-actions{
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  margin-top: 48px;
+  opacity: 0;
+  transform: translateY(22px);
+  transition: opacity 1.1s var(--ease) 0.34s, transform 1.1s var(--ease) 0.34s;
+}
+
+#resolution.is-visible .res-eyebrow,
+#resolution.is-visible .res-line,
+#resolution.is-visible .res-sub,
+#resolution.is-visible .res-stats,
+#resolution.is-visible .res-actions{
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.btn{
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 216px;
+  padding: 17px 34px;
+  border-radius: 980px;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  transition: transform 0.5s var(--ease), background 0.5s var(--ease), border-color 0.5s var(--ease), color 0.5s var(--ease);
+}
+.btn-fill{
+  background: var(--white);
+  color: var(--black);
+}
+.btn-fill:hover{ transform: translateY(-2px); background: #E4E4E4; }
+.btn-line{
+  background: transparent;
+  color: var(--white);
+  border: 1px solid var(--ink-35);
+}
+.btn-line:hover{ transform: translateY(-2px); border-color: var(--white); }
+
+/* ============================================================================
+   ERİŞİLEBİLİRLİK
+   ============================================================================ */
+@media (prefers-reduced-motion: reduce){
+  #scroll-cue svg{ animation: none; }
+  #grain{ animation: none; }
+  .scene, .res-eyebrow, .res-line, .res-sub, .res-stats, .res-actions, .btn{ transition-duration: 0.01ms !important; }
+}
+
+@media (max-width: 640px){
+  .scene{ max-width: 88vw; }
+  .scene .line{ font-size: clamp(32px, 9.4vw, 60px); }
+  .scene .line--sub{ font-size: clamp(16px, 4.4vw, 20px); }
+  .res-stats{ flex-wrap: wrap; row-gap: 28px; }
+  .res-stat{ border-left: none; padding: 0 20px; }
+  .btn{ min-width: 180px; padding: 15px 26px; }
+}
+</style>
+</head>
+<body class="is-loading">
+
+<div id="loader">
+  <div class="loader-mark">SOFTHYDRA</div>
+  <div class="loader-track"><div class="loader-fill" id="loader-fill"></div></div>
+  <div class="loader-error" id="loader-error">
+    Kareler yüklenemedi. <code>frames/</code> klasörünün bu dosyayla aynı
+    dizinde ve <code>ezgif-frame-001.jpg</code> … <code>ezgif-frame-152.jpg</code>
+    adlarıyla eksiksiz olduğundan emin olun.
+  </div>
+</div>
+
+<div id="progress-line"></div>
+
+<main id="scroll-track">
+  <div id="pin">
+    <canvas id="frame-canvas" aria-hidden="true"></canvas>
+    <div id="vignette"></div>
+    <div id="grain"></div>
+    <div id="curtain"></div>
+
+    <!-- ========================================================================
+         NARRATİF SAHNELER
+         Her sahnenin data-start / data-end değeri, toplam scroll ilerlemesi
+         (0–1) üzerindeki normalize edilmiş konumudur. Aralarındaki boşluklar
+         bilinçlidir: bir sonraki düşünce gelmeden önce ekranın nefes alması,
+         izleyicinin bir öncekini sindirmesi için zaman tanır. Kısa, tek
+         kelimelik sahneler (Pas / Kum / Tortu) vurgu darbeleri gibi çalışır;
+         uzun sahneler daha geniş bir pencereye yayılır ki okuma süresi
+         yetsin. Konum: bazı sahneler merkezde, bazıları solda — kamera
+         sürekli aynı yerde durmuyor, sahne değiştikçe kompozisyon da değişir.
+         ======================================================================== -->
+    <div id="narrative-layer">
+      <div class="scene" data-start="0.028" data-end="0.118">
+        <span class="line">Temiz görünüyor.</span>
+      </div>
+
+      <div class="scene" data-start="0.150" data-end="0.250">
+        <span class="line">Ama gördüğünüz,</span>
+        <span class="line">suyun tamamı değil.</span>
+      </div>
+
+      <div class="scene scene--left" data-start="0.282" data-end="0.372">
+        <span class="line">Her gün,</span>
+        <span class="line line--sub">binlerce görünmeyen parçacık musluğunuzdan geçiyor.</span>
+      </div>
+
+      <div class="scene" data-start="0.400" data-end="0.472">
+        <span class="line">Pas.</span>
+      </div>
+
+      <div class="scene scene--left" data-start="0.494" data-end="0.566">
+        <span class="line">Kum.</span>
+      </div>
+
+      <div class="scene" data-start="0.588" data-end="0.660">
+        <span class="line">Tortu.</span>
+      </div>
+
+      <div class="scene scene--left" data-start="0.682" data-end="0.760">
+        <span class="line">Metal parçacıkları.</span>
+      </div>
+
+      <div class="scene" data-start="0.782" data-end="0.876">
+        <span class="line">Sediment filtre,</span>
+        <span class="line line--sub">gördüklerinizi değil, göremediklerinizi yakalar.</span>
+      </div>
+
+      <div class="scene" data-start="0.898" data-end="0.972">
+        <span class="line">Bu filtrenin içinde,</span>
+        <span class="line line--sub">aslında kendi şebeke suyunuzu görüyorsunuz.</span>
+      </div>
+    </div>
+
+    <div id="scroll-cue">
+      <svg width="13" height="19" viewBox="0 0 13 19" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M6.5 1V18M6.5 18L1 12.5M6.5 18L12 12.5" stroke="#fff" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </div>
+  </div>
+</main>
+
+<section id="resolution">
+  <div class="res-eyebrow">SOFTHYDRA</div>
+  <h2 class="res-line">Temiz su bir lüks değildir.</h2>
+  <p class="res-sub">
+    Az önce gördükleriniz yalnızca sediment filtrenin tuttuklarıydı.
+    Peki ya göremedikleriniz?
+  </p>
+  <div class="res-stats">
+    <div class="res-stat">
+      <span class="res-stat-num">5 Mikron</span>
+      <span class="res-stat-label">Hassas Sediment Tutma</span>
+    </div>
+    <div class="res-stat">
+      <span class="res-stat-num">Çok Aşamalı</span>
+      <span class="res-stat-label">Kademeli Filtrasyon</span>
+    </div>
+    <div class="res-stat">
+      <span class="res-stat-num">Şeffaf Gövde</span>
+      <span class="res-stat-label">Sonucu Gözünüzle Görün</span>
+    </div>
+  </div>
+  <div class="res-actions">
+    <a class="btn btn-fill" href="https://softhydra.com/su-aritma-cihazlari">Ürünleri Keşfet</a>
+    <a class="btn btn-line" href="https://softhydra.com/filtre-setleri">Filtreleri İncele</a>
+  </div>
+</section>
+
+<script>
+/* ============================================================================
+   SOFTHYDRA — SİNEMATİK SCROLL MOTORU
+   Production seviyesinde, framework'süz vanilla JavaScript.
+
+   Mimari:
+   1) 152 kare önceden yüklenir; yükleme bitmeden scroll kilitlidir.
+   2) #scroll-track kaydırma mesafesi üretir, #pin sticky olarak ekrana
+      yapışır. scrollMultiplier önceki sürüme göre belirgin şekilde
+      artırıldı (7.5 → 13) — bu, aynı 152 karenin çok daha geniş bir scroll
+      mesafesine yayılması, dolayısıyla kullanıcının video "kaçırıyormuş"
+      hissi yerine bir reklam filmi izliyormuş gibi hissetmesi anlamına gelir.
+   3) Sürekli çalışan tek bir rAF döngüsü (scroll olayına bağımlı değil):
+        - scrollY'den ham 0–1 arası "progress" (p) hesaplar (cache'lenmiş
+          track ofseti sayesinde forced reflow üretmez),
+        - kare seçimi için p, bir "smootherstep" eğrisinden geçirilir:
+          bu eğri başta ve sonda yavaş, ortada doğal/hızlı akan bir tempo
+          üretir — tam olarak brief'in istediği "yavaş başla, doğal ak,
+          yavaş bitir" hissi. Metin sahneleri ise HAM p üzerinden tetiklenir,
+          böylece okuma temposu görüntü temposundan bağımsız ve her zaman
+          düzenli kalır.
+        - metin sahnelerinin opacity / blur / scale / translateY değerlerini
+          günceller — blur ile gelen, netleşen, tekrar hafifçe bulanıklaşıp
+          giden yumuşak bir odak (focus-pull) hissi verir. Efektler önceki
+          sürüme göre daha yumuşak: hiçbir sert geçiş, hiçbir zıplama.
+        - vignette / exposure / curtain gibi kamera efektlerini senkronize
+          eder. Curtain kapanışta bile %97'de durur — kare hiçbir zaman
+          tamamen kaybolmaz.
+   4) Sürekli çalışan döngü, zamana bağlı çok hafif bir "nefes alma" zoom'u
+      ekleyerek kameranın canlı olduğu hissini yaratır (reduced-motion'da
+      kapanır).
+   ============================================================================ */
+
+(function () {
+  "use strict";
+
+  var CONFIG = {
+    frameCount: 152,
+    framePathPrefix: "frames/ezgif-frame-",
+    framePathSuffix: ".jpg",
+    // Sticky alanın kaç viewport yüksekliği boyunca süreceği. 7.5 → 13:
+    // ortalama bir scroll hızında bu, ~13-16 saniyelik bir izleme deneyimine
+    // karşılık gelir (brief'in hedeflediği "~15 saniye"ye denk düşer).
+    scrollMultiplier: 13
+  };
+
+  var reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  /* ---- DOM referansları --------------------------------------------------- */
+  var body = document.body;
+  var loaderEl = document.getElementById("loader");
+  var loaderFillEl = document.getElementById("loader-fill");
+  var loaderErrorEl = document.getElementById("loader-error");
+  var trackEl = document.getElementById("scroll-track");
+  var canvas = document.getElementById("frame-canvas");
+  var ctx = canvas.getContext("2d", { alpha: false });
+  var progressLineEl = document.getElementById("progress-line");
+  var vignetteEl = document.getElementById("vignette");
+  var curtainEl = document.getElementById("curtain");
+  var sceneEls = Array.prototype.slice.call(document.querySelectorAll(".scene"));
+  var scrollCueEl = document.getElementById("scroll-cue");
+  var resolutionEl = document.getElementById("resolution");
+
+  /* ---- Matematik yardımcıları ---------------------------------------------- */
+  function clamp(v, min, max) { return Math.min(max, Math.max(min, v)); }
+
+  function smoothstep(edge0, edge1, x) {
+    if (edge0 === edge1) return x < edge0 ? 0 : 1;
+    var t = clamp((x - edge0) / (edge1 - edge0), 0, 1);
+    return t * t * (3 - 2 * t);
+  }
+
+  // "Smootherstep" (Ken Perlin) — smoothstep'in daha yumuşak türevi.
+  // Simetrik bir S-eğrisi üretir: 0'a ve 1'e yaklaşırken türev de sıfıra
+  // yaklaşır, yani hem başlangıçta hem bitişte "gerçek" bir yavaşlama olur,
+  // ortada ise en hızlı bölgeden doğal biçimde geçilir. Bu tek fonksiyon,
+  // brief'teki "ilk sahneler yavaş / orta doğal / final yavaş" isteğinin
+  // matematiksel karşılığıdır ve tüm 0–1 kare oynatma eksenine uygulanır.
+  function smootherstep(x) {
+    var t = clamp(x, 0, 1);
+    return t * t * t * (t * (t * 6 - 15) + 10);
+  }
+
+  /* ============================================================================
+     1) ÖN YÜKLEME
+     ============================================================================ */
+  var frameImages = new Array(CONFIG.frameCount + 1);
+  var loadedCount = 0;
+  var failedCount = 0;
+
+  function framePath(index) {
+    return CONFIG.framePathPrefix + String(index).padStart(3, "0") + CONFIG.framePathSuffix;
+  }
+
+  function updateLoaderUI() {
+    var done = loadedCount + failedCount;
+    var pct = Math.round((done / CONFIG.frameCount) * 100);
+    loaderFillEl.style.width = pct + "%";
+  }
+
+  function preloadFrames(onComplete) {
+    var total = CONFIG.frameCount;
+    var settled = 0;
+    for (var i = 1; i <= total; i++) {
+      (function (index) {
+        var img = new Image();
+        img.decoding = "async";
+        img.onload = function () {
+          loadedCount++; settled++; updateLoaderUI();
+          if (settled === total) onComplete();
+        };
+        img.onerror = function () {
+          failedCount++; settled++; updateLoaderUI();
+          if (settled === total) onComplete();
+        };
+        img.src = framePath(index);
+        frameImages[index] = img;
+      })(i);
+    }
+  }
+
+  /* ============================================================================
+     2) CANVAS — HiDPI destekli "cover" hizalama + sinematik zoom
+     ============================================================================ */
+  var canvasCssWidth = 0;
+  var canvasCssHeight = 0;
+
+  function resizeCanvas() {
+    canvasCssWidth = window.innerWidth;
+    canvasCssHeight = window.innerHeight;
+    var dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 2.5));
+
+    canvas.width = Math.round(canvasCssWidth * dpr);
+    canvas.height = Math.round(canvasCssHeight * dpr);
+    canvas.style.width = canvasCssWidth + "px";
+    canvas.style.height = canvasCssHeight + "px";
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  // object-fit:cover davranışı + merkeze göre ek zoom (Ken Burns hissi).
+  function drawCover(img, zoom) {
+    var iw = img.naturalWidth, ih = img.naturalHeight;
+    var cw = canvasCssWidth, ch = canvasCssHeight;
+    if (!iw || !ih) return;
+
+    var imgRatio = iw / ih;
+    var canvasRatio = cw / ch;
+    var baseW, baseH;
+
+    if (imgRatio > canvasRatio) { baseH = ch; baseW = ch * imgRatio; }
+    else { baseW = cw; baseH = cw / imgRatio; }
+
+    var drawW = baseW * zoom;
+    var drawH = baseH * zoom;
+    var offsetX = (cw - drawW) / 2;
+    var offsetY = (ch - drawH) / 2;
+
+    ctx.drawImage(img, offsetX, offsetY, drawW, drawH);
+  }
+
+  function drawFrame(index, zoom) {
+    var img = frameImages[index];
+    if (!img || !img.complete || img.naturalWidth === 0) return;
+    ctx.fillStyle = "#000000";
+    ctx.fillRect(0, 0, canvasCssWidth, canvasCssHeight);
+    drawCover(img, zoom);
+  }
+
+  /* ============================================================================
+     3) SCROLL UZUNLUĞU — cache'lenmiş, forced reflow üretmeyen ofset
+     ============================================================================ */
+  var trackHeightPx = 0;
+  var maxScrollWithinTrack = 1;
+  var trackOffsetTop = 0;
+
+  function recalcTrackGeometry() {
+    var vh = window.innerHeight;
+    trackHeightPx = vh * CONFIG.scrollMultiplier;
+    trackEl.style.height = trackHeightPx + "px";
+    maxScrollWithinTrack = Math.max(1, trackHeightPx - vh);
+    // Tek seferlik ölçüm — her karede değil, yalnızca yükleme ve resize'da.
+    trackOffsetTop = trackEl.getBoundingClientRect().top + window.scrollY;
+  }
+
+  /* ============================================================================
+     4) ANLATI SAHNELERİ — blur + opacity + translateY + scale, ham scroll
+        ilerlemesine (p) göre senkronize edilir. Kare oynatma hızından
+        bağımsızdır, böylece okuma temposu her zaman öngörülebilir kalır.
+     ============================================================================ */
+  var scenes = sceneEls.map(function (el) {
+    return {
+      el: el,
+      start: parseFloat(el.dataset.start),
+      end: parseFloat(el.dataset.end),
+      isLeft: el.classList.contains("scene--left")
+    };
+  });
+
+  function renderScenes(p) {
+    var maxActivity = 0; // vignette / exposure için en güçlü aktif sahne
+
+    for (var i = 0; i < scenes.length; i++) {
+      var s = scenes[i];
+      var span = s.end - s.start;
+      // Giriş/çıkış için ayrılan pay sabit bir tavana sahiptir (0.09), böylece
+      // sahne genişledikçe fade oranı büyümez — tam tersine, tam opaklıkta
+      // "okuma için sabit kalma" süresi artar. Bu, "her yazı yeterince uzun
+      // süre ekranda kalsın" isteğinin doğrudan uygulanmasıdır.
+      var fade = Math.min(span * 0.42, 0.09);
+
+      var enter = smoothstep(s.start, s.start + fade, p);
+      var exit = smoothstep(s.end - fade, s.end, p);
+      var opacity = clamp(Math.min(enter, 1 - exit), 0, 1);
+
+      // Odak çekme (focus-pull): girerken hafifçe bulanık + büyük + aşağıda,
+      // netleşince tam odak, çıkarken tekrar çok hafif bulanıklaşıp yukarı
+      // süzülür. Değerler önceki sürüme göre kısıldı — hiçbir sert geçiş,
+      // hiçbir agresif efekt istemiyoruz.
+      var blur = (1 - enter) * 10 + exit * 8;
+      var scale = 1.035 - enter * 0.035 - exit * 0.018;
+      var translateY = (1 - enter) * 16 - exit * 10;
+
+      var el = s.el;
+      el.style.opacity = opacity;
+      if (opacity > 0.001) {
+        el.style.filter = reducedMotion ? "none" : "blur(" + blur.toFixed(2) + "px)";
+        if (s.isLeft) {
+          el.style.transform = reducedMotion
+            ? "translateY(-50%)"
+            : "translateY(calc(-50% + " + translateY.toFixed(1) + "px)) scale(" + scale.toFixed(3) + ")";
+        } else {
+          el.style.transform = reducedMotion
+            ? "translate(-50%, -50%)"
+            : "translate(-50%, calc(-50% + " + translateY.toFixed(1) + "px)) scale(" + scale.toFixed(3) + ")";
+        }
+      }
+
+      if (opacity > maxActivity) maxActivity = opacity;
+    }
+
+    return maxActivity;
+  }
+
+  /* ============================================================================
+     5) KAMERA EFEKTLERİ — vignette, exposure, curtain, zoom
+     ============================================================================ */
+  var loadTimestamp = 0;
+
+  // Sayfa yüklendikten sonraki ilk ~1100ms için 0→1 arası zaman ilerlemesi.
+  function introTime(elapsedMs) {
+    if (!loadTimestamp) return 1;
+    return clamp((elapsedMs - loadTimestamp) / 1100, 0, 1);
+  }
+
+  function renderCamera(p, sceneActivity, elapsedMs) {
+    // Vignette: bir metin ekrandayken hafifçe koyulaşır — kart değil, ışık.
+    vignetteEl.style.opacity = (0.30 + sceneActivity * 0.28).toFixed(3);
+
+    // Exposure: sahne belirirken kamera "odaklanıyormuş" gibi çok hafif kısılır.
+    var brightness = 1 - sceneActivity * 0.04;
+    var contrast = 1.06 + sceneActivity * 0.02;
+    canvas.style.filter =
+      "contrast(" + contrast.toFixed(3) + ") " +
+      "brightness(" + brightness.toFixed(3) + ") " +
+      "saturate(1.03)";
+
+    // Perde: açılışta içeri, kapanışta (0.90–0.995) dışarı sinematik geçiş.
+    // Maksimum 0.97'de sınırlanır: "video hiçbir zaman tamamen kapanmamalı"
+    // isteği gereği, bölüm geçişinde bile kareden ince bir iz kalır.
+    var openCurtain = 1 - smoothstep(0, 0.92, introTime(elapsedMs));
+    var closeCurtain = smoothstep(0.90, 0.995, p) * 0.97;
+    curtainEl.style.opacity = Math.max(openCurtain, closeCurtain).toFixed(3);
+
+    // İlerleme çizgisi.
+    progressLineEl.style.width = (p * 100) + "%";
+
+    // Kaydırma ipucu yalnızca en başta görünür.
+    if (p > 0.012) scrollCueEl.classList.add("is-hidden");
+    else scrollCueEl.classList.remove("is-hidden");
+  }
+
+  /* ============================================================================
+     6) SÜREKLİ rAF DÖNGÜSÜ — kamera her zaman "canlı"
+     ============================================================================ */
+  function computeProgress() {
+    return clamp((window.scrollY - trackOffsetTop) / maxScrollWithinTrack, 0, 1);
+  }
+
+  function loop(timestamp) {
+    var p = computeProgress();
+
+    // Kare seçimi HAM p yerine smootherstep'ten geçirilmiş p kullanır:
+    // başta ve sonda görüntü yavaş akar, ortada doğal/hızlı akar. Metin
+    // sahneleri ise (renderScenes içinde) ham p'yi kullanmaya devam eder —
+    // iki eksen kasıtlı olarak ayrıştırılmıştır.
+    var easedP = reducedMotion ? p : smootherstep(p);
+    var frameIndex = clamp(Math.ceil(easedP * CONFIG.frameCount), 1, CONFIG.frameCount);
+
+    // Zamana bağlı çok hafif "nefes alma" — kameranın canlı olduğu hissi.
+    var breathing = reducedMotion ? 0 : Math.sin(timestamp / 2600) * 0.006;
+    var pushIn = easedP * 0.05; // yolculuk boyunca çok yavaş, kalıcı yaklaşma
+    var zoom = 1.0 + pushIn + breathing;
+
+    drawFrame(frameIndex, zoom);
+    var sceneActivity = renderScenes(p);
+    renderCamera(p, sceneActivity, timestamp);
+
+    window.requestAnimationFrame(loop);
+  }
+
+  /* ============================================================================
+     7) RESIZE
+     ============================================================================ */
+  var resizeRaf = null;
+  function onResize() {
+    if (resizeRaf) window.cancelAnimationFrame(resizeRaf);
+    resizeRaf = window.requestAnimationFrame(function () {
+      resizeCanvas();
+      recalcTrackGeometry();
+    });
+  }
+
+  /* ============================================================================
+     8) ÇÖZÜM BÖLÜMÜ — görünüme girince sessizce beliren son sahne
+     ============================================================================ */
+  function initResolutionReveal() {
+    if (!("IntersectionObserver" in window)) {
+      resolutionEl.classList.add("is-visible");
+      return;
+    }
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (entry.isIntersecting) {
+          resolutionEl.classList.add("is-visible");
+          io.disconnect();
+        }
+      });
+    }, { threshold: 0.35 });
+    io.observe(resolutionEl);
+  }
+
+  /* ============================================================================
+     9) BAŞLATMA
+     ============================================================================ */
+  function init() {
+    resizeCanvas();
+    recalcTrackGeometry();
+    initResolutionReveal();
+
+    drawFrame(1, 1.0);
+    renderScenes(0);
+
+    body.classList.remove("is-loading");
+    loaderEl.classList.add("is-hidden");
+    loadTimestamp = performance.now();
+
+    window.addEventListener("resize", onResize);
+    window.addEventListener("orientationchange", onResize);
+
+    window.requestAnimationFrame(loop);
+  }
+
+  function handleLoadFinished() {
+    if (failedCount === CONFIG.frameCount) {
+      loaderErrorEl.classList.add("is-visible");
+      loaderFillEl.parentElement.style.display = "none";
+      body.classList.remove("is-loading");
+      return;
+    }
+    init();
+  }
+
+  preloadFrames(handleLoadFinished);
+
+  /* ============================================================================
+     10) SON GÖZDEN GEÇİRME NOTLARI (self-review)
+     ------------------------------------------------------------------------
+     - Performans: tek rAF döngüsü; scroll event listener yok, layout okuma
+       (getBoundingClientRect) yalnızca yükleme + resize sırasında yapılıyor,
+       her karede değil → forced reflow / layout thrashing yok.
+     - Bellek: preload edilen 152 <img> referansı sabit bir dizide tutuluyor,
+       döngü içinde yeni obje/closure üretilmiyor → memory leak riski yok.
+     - HiDPI: devicePixelRatio 2.5 ile sınırlandı (çok yüksek DPR'lerde canvas
+       boyutunun patlamasını, dolayısıyla mobilde bellek/GPU baskısını önler).
+     - Mobil Safari: 100svh kullanımı adres çubuğu kaynaklı sıçramaları
+       azaltır; sticky + overflow:hidden kombinasyonu iOS'ta test edilmesi
+       gereken standart bir örüntüdür, ekstra vendor prefix gerektirmez.
+     - Erişilebilirlik: prefers-reduced-motion tüm blur/scale/translate ve
+       "nefes alma" zoom'unu devre dışı bırakıyor; odak halkaları korunuyor.
+     - Tempo: scrollMultiplier 13 + smootherstep easing + sahne başına sabit
+       tavanlı fade payı = brief'in istediği "yavaş başlangıç / doğal orta /
+       yavaş final" ve "kimse okumadan kaybolmasın" hedefleri karşılanıyor.
+     ============================================================================ */
+
+})();
+</script>
+</body>
+</html>
